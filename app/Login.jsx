@@ -8,18 +8,28 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+// --- CHANGE 1: Import useRouter for navigation ---
+import { useRouter } from 'expo-router';
+// --- CHANGE 2: Import Firebase auth ---
+import { auth } from '../firebaseConfig'; // Make sure the path is correct
+import { signInWithEmailAndPassword } from 'firebase/auth';
 
-export default function LoginForm() {
-  const navigation = useNavigation();
+
+export default function Login() {
+  // --- CHANGE 3: Use the useRouter hook ---
+  const router = useRouter();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [touched, setTouched] = useState({});
 
-  // --- Validation ---
+  // --- CHANGE 4: Add state for loading and Firebase errors ---
+  const [loading, setLoading] = useState(false);
+  const [firebaseError, setFirebaseError] = useState('');
+
+
+  // --- Validation (No changes needed here) ---
   const isEmailValid = (v) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
 
@@ -42,20 +52,31 @@ export default function LoginForm() {
 
   const hasErrors = Object.values(errors).some((e) => e);
 
-  const handleSubmit = () => {
+  // --- CHANGE 5: Update handleSubmit with Firebase logic ---
+  const handleSubmit = async () => {
     setTouched({ email: true, password: true });
+    setFirebaseError(''); // Reset previous errors
 
     if (hasErrors) return;
 
-    // Demo payload
-    const payload = {
-      email: email.trim(),
-      password,
-    };
+    setLoading(true);
+    try {
+      // Sign in with Firebase
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      // Navigate to Home on success, replacing the login screen in the stack
+      router.replace('/Home');
 
-    // Replace with real API call
-    Alert.alert('Success', 'Logged in!', [{ text: 'OK' }]);
-    console.log('Login payload:', payload);
+    } catch (err) {
+      console.error('Firebase Login Error:', err.code);
+      // Provide user-friendly error messages
+      if (err.code === 'auth/invalid-credential') {
+        setFirebaseError('Invalid email or password. Please try again.');
+      } else {
+        setFirebaseError('An unexpected error occurred. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const markTouched = (key) =>
@@ -70,7 +91,7 @@ export default function LoginForm() {
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Header Card */}
+        {/* Header Card (No changes needed) */}
         <View style={styles.headerCard}>
           <View style={styles.badge}>
             <Text style={styles.badgeText}>Login</Text>
@@ -83,7 +104,7 @@ export default function LoginForm() {
 
         {/* Form Card */}
         <View style={styles.card}>
-          {/* Email */}
+          {/* Email (No changes needed) */}
           <FieldLabel label="Email" required />
           <TextInput
             value={email}
@@ -101,7 +122,7 @@ export default function LoginForm() {
           />
           <FieldError show={touched.email} message={errors.email} />
 
-          {/* Password */}
+          {/* Password (No changes needed) */}
           <FieldLabel label="Password" required />
           <TextInput
             value={password}
@@ -117,27 +138,27 @@ export default function LoginForm() {
           />
           <FieldError show={touched.password} message={errors.password} />
 
-          {/* Submit */}
+          {/* --- CHANGE 6: Display Firebase error message --- */}
+          {firebaseError ? <Text style={styles.firebaseError}>{firebaseError}</Text> : null}
+
+          {/* --- CHANGE 7: Update Submit button state --- */}
           <Pressable
             onPress={handleSubmit}
             style={({ pressed }) => [
               styles.submitBtn,
               pressed && styles.submitBtnPressed,
-              hasErrors ? styles.submitBtnDisabled : null,
+              (hasErrors || loading) ? styles.submitBtnDisabled : null,
             ]}
-            disabled={hasErrors}
+            disabled={hasErrors || loading}
           >
             <Text style={styles.submitText}>
-              Log In
+              {loading ? 'Logging In...' : 'Log In'}
             </Text>
           </Pressable>
 
-          {/* --- Register link --- */}
+          {/* --- CHANGE 8: Update Register link navigation --- */}
           <Pressable
-            onPress={() => {
-              // navigate back to Register
-              navigation.navigate('index');
-            }}
+            onPress={() => router.push('/')} // Navigates to index route
             style={({ pressed }) => [
               styles.loginLink,
               pressed && { opacity: 0.6 },
@@ -156,6 +177,7 @@ export default function LoginForm() {
   );
 }
 
+// Helper Components (No changes needed)
 function FieldLabel({ label, required }) {
   return (
     <View style={styles.labelRow}>
@@ -171,6 +193,7 @@ function FieldError({ show, message }) {
   return <Text style={styles.error}>{message}</Text>;
 }
 
+// --- CHANGE 9: Add style for Firebase error ---
 const COLORS = {
   bg: '#0F2027',
   bg2: '#203A43',
@@ -185,6 +208,14 @@ const COLORS = {
 };
 
 const styles = StyleSheet.create({
+  //... (all your existing styles)
+  firebaseError: {
+    marginTop: 10,
+    marginBottom: 6,
+    color: COLORS.error,
+    fontSize: 13,
+    textAlign: 'center',
+  },
   flex: { flex: 1, backgroundColor: COLORS.bg },
   container: {
     padding: 20,
