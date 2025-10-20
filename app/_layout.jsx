@@ -39,6 +39,14 @@ export default function RootLayout() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="Login" options={{ headerShown: false }} />
         <Stack.Screen name="Home" options={{ headerShown: false }} />
+        <Stack.Screen name="Attendance" options={{ headerShown: false }} />
+        <Stack.Screen name="Leave" options={{ headerShown: false }} />
+        <Stack.Screen name="RequestLeave" options={{ headerShown: false }} />
+        <Stack.Screen name="ApprovedLeave" options={{ headerShown: false }} />
+        <Stack.Screen name="RejectedLeave" options={{ headerShown: false }} />
+        <Stack.Screen name="Payslip" options={{ headerShown: false }} />
+        <Stack.Screen name="Profile" options={{ headerShown: false }} />
+        
       </Stack>
     </SafeAreaProvider>
   );

@@ -9,27 +9,28 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-// --- CHANGE 1: Import useRouter for navigation ---
 import { useRouter } from 'expo-router';
-// --- CHANGE 2: Import Firebase auth ---
+
+// --- Import Firebase Auth ---
 import { auth } from '../firebaseConfig'; // Make sure the path is correct
 import { signInWithEmailAndPassword } from 'firebase/auth';
 
+// --- NEW: Import Axios and AsyncStorage ---
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// --- NEW: Define your Spring Boot API URL ---
+const API_URL = Platform.OS === 'ios' ? 'http://localhost:8080' : 'http://10.0.2.2:8080';
 
 export default function Login() {
-  // --- CHANGE 3: Use the useRouter hook ---
   const router = useRouter();
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [touched, setTouched] = useState({});
-
-  // --- CHANGE 4: Add state for loading and Firebase errors ---
   const [loading, setLoading] = useState(false);
   const [firebaseError, setFirebaseError] = useState('');
 
-
-  // --- Validation (No changes needed here) ---
+  // --- Validation (No changes) ---
   const isEmailValid = (v) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
 
@@ -52,7 +53,7 @@ export default function Login() {
 
   const hasErrors = Object.values(errors).some((e) => e);
 
-  // --- CHANGE 5: Update handleSubmit with Firebase logic ---
+  // --- Updated handleSubmit with 3-step logic ---
   const handleSubmit = async () => {
     setTouched({ email: true, password: true });
     setFirebaseError(''); // Reset previous errors
@@ -60,16 +61,51 @@ export default function Login() {
     if (hasErrors) return;
 
     setLoading(true);
+
     try {
-      // Sign in with Firebase
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      // Navigate to Home on success, replacing the login screen in the stack
+      // ---------------------------------------------
+      // 🚀 STEP 1: Authenticate with Firebase
+      // ---------------------------------------------
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      
+      // Get the email from the successful login
+      const loggedInEmail = userCredential.user.email;
+      
+      // ---------------------------------------------
+      // 🚀 STEP 2: Fetch Employee Data from MySQL (via Spring Boot)
+      // ---------------------------------------------
+      console.log(`Firebase login successful. Fetching data for: ${loggedInEmail}`);
+      
+      // Call your new endpoint
+      const response = await axios.get(`${API_URL}/api/employees/by-email`, {
+        params: { email: loggedInEmail }
+      });
+
+      // Get the full employee object from your MySQL database
+      const employeeData = response.data;
+      console.log(`Found MySQL employee: ${employeeData.name} (ID: ${employeeData.id})`);
+      
+      // ---------------------------------------------
+      // 🚀 STEP 3: Save the MySQL ID AND NAME
+      // ---------------------------------------------
+      
+      await AsyncStorage.setItem('@employee_id', employeeData.id.toString());
+      
+      // --- THIS IS THE UPDATED/ADDED LINE ---
+      await AsyncStorage.setItem('@employee_name', employeeData.name);
+
+      // Navigate to Home on complete success
       router.replace('/Home');
 
     } catch (err) {
-      console.error('Firebase Login Error:', err.code);
-      // Provide user-friendly error messages
-      if (err.code === 'auth/invalid-credential') {
+      console.error('Login Error:', err);
+      
+      if (err.isAxiosError) {
+        // This is an error from your Spring Boot server
+        console.error("Axios Error:", err.response?.data); // Use ?.data for safety
+        setFirebaseError('Failed to find your employee record in our system.');
+      } else if (err.code === 'auth/invalid-credential') {
+        // This is a Firebase error
         setFirebaseError('Invalid email or password. Please try again.');
       } else {
         setFirebaseError('An unexpected error occurred. Please try again.');
@@ -79,9 +115,11 @@ export default function Login() {
     }
   };
 
+
   const markTouched = (key) =>
     setTouched((t) => ({ ...t, [key]: true }));
 
+  // --- JSX (No Changes) ---
   return (
     <KeyboardAvoidingView
       style={styles.flex}
@@ -91,82 +129,105 @@ export default function Login() {
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Header Card (No changes needed) */}
-        <View style={styles.headerCard}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>Login</Text>
+        {/* Modern Header */}
+        <View style={styles.headerSection}>
+          <View style={styles.logoContainer}>
+            <View style={styles.logoIcon}>
+              <Text style={styles.logoEmoji}>🔐</Text>
+            </View>
+            <Text style={styles.appTitle}>Welcome Back</Text>
+            <Text style={styles.appSubtitle}>Sign in to continue</Text>
           </View>
-          <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>
-            Please enter your details to continue
-          </Text>
         </View>
 
-        {/* Form Card */}
-        <View style={styles.card}>
-          {/* Email (No changes needed) */}
-          <FieldLabel label="Email" required />
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            onBlur={() => markTouched('email')}
-            placeholder="name@example.com"
-            placeholderTextColor="#8AA6B1"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={[
-              styles.input,
-              touched.email && errors.email ? styles.inputError : null,
-            ]}
-          />
-          <FieldError show={touched.email} message={errors.email} />
+        {/* Modern Form Card */}
+        <View style={styles.formCard}>
+          {/* Email Field */}
+          <View style={styles.fieldContainer}>
+            <FieldLabel label="Email" required />
+            <View style={[
+              styles.inputContainer,
+              touched.email && errors.email ? styles.inputContainerError : null,
+            ]}>
+              <Text style={styles.inputIcon}>📧</Text>
+              <TextInput
+                value={email}
+                onChangeText={setEmail}
+                onBlur={() => markTouched('email')}
+                placeholder="name@example.com"
+                placeholderTextColor="#64748B"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.textInput}
+                editable={!loading}
+              />
+            </View>
+            <FieldError show={touched.email} message={errors.email} />
+          </View>
 
-          {/* Password (No changes needed) */}
-          <FieldLabel label="Password" required />
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            onBlur={() => markTouched('password')}
-            placeholder="Enter your password"
-            placeholderTextColor="#8AA6B1"
-            secureTextEntry
-            style={[
-              styles.input,
-              touched.password && errors.password ? styles.inputError : null,
-            ]}
-          />
-          <FieldError show={touched.password} message={errors.password} />
+          {/* Password Field */}
+          <View style={styles.fieldContainer}>
+            <FieldLabel label="Password" required />
+            <View style={[
+              styles.inputContainer,
+              touched.password && errors.password ? styles.inputContainerError : null,
+            ]}>
+              <Text style={styles.inputIcon}>🔒</Text>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                onBlur={() => markTouched('password')}
+                placeholder="Enter your password"
+                placeholderTextColor="#64748B"
+                secureTextEntry
+                style={styles.textInput}
+                editable={!loading}
+              />
+            </View>
+            <FieldError show={touched.password} message={errors.password} />
+          </View>
 
-          {/* --- CHANGE 6: Display Firebase error message --- */}
-          {firebaseError ? <Text style={styles.firebaseError}>{firebaseError}</Text> : null}
+          {/* Firebase Error Display */}
+          {firebaseError ? (
+            <View style={styles.firebaseErrorContainer}>
+              <Text style={styles.firebaseError}>⚠️ {firebaseError}</Text>
+            </View>
+          ) : null}
 
-          {/* --- CHANGE 7: Update Submit button state --- */}
+          {/* Modern Submit Button */}
           <Pressable
             onPress={handleSubmit}
             style={({ pressed }) => [
-              styles.submitBtn,
-              pressed && styles.submitBtnPressed,
-              (hasErrors || loading) ? styles.submitBtnDisabled : null,
+              styles.submitButton,
+              pressed && !loading && styles.submitButtonPressed,
+              (hasErrors || loading) && styles.submitButtonDisabled,
             ]}
             disabled={hasErrors || loading}
           >
-            <Text style={styles.submitText}>
-              {loading ? 'Logging In...' : 'Log In'}
-            </Text>
+            <View style={styles.submitContent}>
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <View style={styles.spinner} />
+                  <Text style={styles.submitText}>Signing In...</Text>
+                </View>
+              ) : (
+                <Text style={styles.submitText}>Sign In</Text>
+              )}
+            </View>
           </Pressable>
 
-          {/* --- CHANGE 8: Update Register link navigation --- */}
+          {/* Register Link */}
           <Pressable
-            onPress={() => router.push('/')} // Navigates to index route
+            onPress={() => router.push('/')}
             style={({ pressed }) => [
-              styles.loginLink,
-              pressed && { opacity: 0.6 },
+              styles.registerLinkContainer,
+              pressed && { opacity: 0.7 },
             ]}
           >
-            <Text style={styles.loginText}>
-              Don’t have an account?{' '}
-              <Text style={styles.loginTextAccent}>Register</Text>
+            <Text style={styles.registerLinkText}>
+              Don't have an account?{' '}
+              <Text style={styles.registerLinkAccent}>Register</Text>
             </Text>
           </Pressable>
         </View>
@@ -177,12 +238,12 @@ export default function Login() {
   );
 }
 
-// Helper Components (No changes needed)
+// --- Helper Components (No Changes) ---
 function FieldLabel({ label, required }) {
   return (
-    <View style={styles.labelRow}>
-      <Text style={styles.label}>
-        {label} {required && <Text style={styles.req}>*</Text>}
+    <View style={styles.labelContainer}>
+      <Text style={styles.labelText}>
+        {label} {required && <Text style={styles.requiredText}>*</Text>}
       </Text>
     </View>
   );
@@ -190,152 +251,265 @@ function FieldLabel({ label, required }) {
 
 function FieldError({ show, message }) {
   if (!show || !message) return null;
-  return <Text style={styles.error}>{message}</Text>;
+  return (
+    <View style={styles.errorContainer}>
+      <Text style={styles.errorText}>⚠️ {message}</Text>
+    </View>
+  );
 }
 
-// --- CHANGE 9: Add style for Firebase error ---
+// --- Styles (No Changes) ---
 const COLORS = {
-  bg: '#0F2027',
-  bg2: '#203A43',
-  accent: '#2BC0E4',
-  accent2: '#29C184',
-  text: '#E8F1F2',
-  textMuted: '#A7C4CB',
-  surface: '#12252D',
-  surfaceSoft: '#17333D',
-  error: '#FF6B6B',
-  outline: '#2A4B55',
+  primary: '#3B82F6',
+  primaryDark: '#2563EB',
+  secondary: '#8B5CF6',
+  accent: '#10B981',
+  
+  background: '#0F172A',
+  backgroundSecondary: '#1E293B',
+  surface: '#334155',
+  surfaceLight: '#475569',
+  
+  text: '#F8FAFC',
+  textSecondary: '#E2E8F0',
+  textMuted: '#94A3B8',
+  textPlaceholder: '#64748B',
+  
+  error: '#EF4444',
+  success: '#10B981',
+  warning: '#F59E0B',
+  
+  border: '#374151',
+  borderLight: '#4B5563',
 };
 
 const styles = StyleSheet.create({
-  //... (all your existing styles)
-  firebaseError: {
-    marginTop: 10,
+  flex: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+
+  container: {
+    padding: 20,
+    paddingTop: 40,
+    justifyContent: 'center',
+    minHeight: '100%',
+  },
+
+  // Header Section
+  headerSection: {
+    marginBottom: 32,
+    alignItems: 'center',
+  },
+
+  logoContainer: {
+    alignItems: 'center',
+  },
+
+  logoIcon: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: `${COLORS.primary}20`,
+    borderWidth: 2,
+    borderColor: `${COLORS.primary}40`,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+
+  logoEmoji: {
+    fontSize: 32,
+  },
+
+  appTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: COLORS.text,
+    textAlign: 'center',
     marginBottom: 6,
+    letterSpacing: -0.5,
+  },
+
+  appSubtitle: {
+    fontSize: 16,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+  },
+
+  // Form Card
+  formCard: {
+    backgroundColor: `${COLORS.surface}F0`,
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: `${COLORS.borderLight}40`,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+
+  // Field Styles
+  fieldContainer: {
+    marginBottom: 20,
+  },
+
+  labelContainer: {
+    marginBottom: 8,
+  },
+
+  labelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  requiredText: {
+    color: COLORS.error,
+    fontWeight: '700',
+  },
+
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${COLORS.backgroundSecondary}E6`,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: `${COLORS.border}60`,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0,
+    shadowRadius: 8,
+    elevation: 0,
+  },
+
+  inputContainerError: {
+    borderColor: COLORS.error,
+    shadowOpacity: 0.3,
+    shadowColor: COLORS.error,
+  },
+
+  inputIcon: {
+    fontSize: 16,
+    marginRight: 12,
+    opacity: 0.7,
+  },
+
+  textInput: {
+    flex: 1,
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '500',
+    paddingVertical: 14,
+    paddingHorizontal: 0,
+  },
+
+  // Submit Button
+  submitButton: {
+    marginTop: 24,
+    backgroundColor: COLORS.primary,
+    borderRadius: 18,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+
+  submitButtonPressed: {
+    transform: [{ scale: 0.98 }],
+    shadowOpacity: 0.2,
+  },
+
+  submitButtonDisabled: {
+    backgroundColor: COLORS.textMuted,
+    shadowOpacity: 0.1,
+  },
+
+  submitContent: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  submitText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  spinner: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderTopColor: '#FFFFFF',
+  },
+
+  // Register Link
+  registerLinkContainer: {
+    marginTop: 20,
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+
+  registerLinkText: {
+    fontSize: 14,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+  },
+
+  registerLinkAccent: {
+    color: COLORS.secondary,
+    fontWeight: '700',
+  },
+
+  // Firebase Error
+  firebaseErrorContainer: {
+    marginTop: 12,
+    marginBottom: 8,
+    padding: 12,
+    backgroundColor: `${COLORS.error}15`,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: `${COLORS.error}30`,
+  },
+
+  firebaseError: {
     color: COLORS.error,
     fontSize: 13,
     textAlign: 'center',
+    fontWeight: '500',
   },
-  flex: { flex: 1, backgroundColor: COLORS.bg },
-  container: {
-    padding: 20,
-    paddingTop: 28,
-  },
-  headerCard: {
-    backgroundColor: COLORS.bg2,
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-  },
-  badge: {
-    alignSelf: 'flex-start',
-    backgroundColor: COLORS.surfaceSoft,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
-    marginBottom: 8,
-  },
-  badgeText: {
-    color: COLORS.textMuted,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
-  title: {
-    color: COLORS.text,
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  subtitle: {
-    color: COLORS.textMuted,
-    fontSize: 14,
-  },
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
-  },
-  labelRow: {
-    marginTop: 12,
-    marginBottom: 6,
-  },
-  label: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  req: { color: COLORS.accent2 },
-  input: {
-    backgroundColor: COLORS.surfaceSoft,
-    color: COLORS.text,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: COLORS.outline,
-    fontSize: 15,
-  },
-  inputError: {
-    borderColor: COLORS.error,
-  },
-  error: {
+
+  // Error Display
+  errorContainer: {
     marginTop: 6,
-    color: COLORS.error,
+    paddingHorizontal: 4,
+  },
+
+  errorText: {
     fontSize: 12,
+    color: COLORS.error,
+    fontWeight: '500',
   },
-  submitBtn: {
-    marginTop: 18,
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    backgroundColor: COLORS.accent,
-    borderWidth: 1,
-    borderColor: '#58D5E9',
-    shadowColor: '#1EB6D8',
-    shadowOpacity: 0.6,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 5,
+
+  footerSpace: {
+    height: 20,
   },
-  submitBtnPressed: {
-    transform: [{ scale: 0.99 }],
-  },
-  submitBtnDisabled: {
-    opacity: 0.7,
-  },
-  submitText: {
-    color: '#041E22',
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    fontSize: 16,
-  },
-  loginLink: {
-    marginTop: 14,
-    alignItems: 'center',
-  },
-  loginText: {
-    color: COLORS.textMuted,
-    fontSize: 14,
-  },
-  loginTextAccent: {
-    color: COLORS.accent2,
-    fontWeight: '700',
-  },
-  footerSpace: { height: 24 },
 });
